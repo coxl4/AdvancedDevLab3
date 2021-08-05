@@ -1,4 +1,3 @@
-  
 # Copyright 2018 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,21 +14,22 @@
 
 import datetime
 
-from flask import Flask, render_template
-
-# [START gae_python38_datastore_store_and_fetch_times]
-# [START gae_python3_datastore_store_and_fetch_times]
+# [START gae_python38_auth_verify_token]
+# [START gae_python3_auth_verify_token]
+from flask import Flask, render_template, request
+from google.auth.transport import requests
 from google.cloud import datastore
+import google.oauth2.id_token
+
+firebase_request_adapter = requests.Request()
+# [END gae_python3_auth_verify_token]
+# [END gae_python38_auth_verify_token]
 
 datastore_client = datastore.Client()
 
-# [END gae_python3_datastore_store_and_fetch_times]
-# [END gae_python38_datastore_store_and_fetch_times]
 app = Flask(__name__)
 
 
-# [START gae_python38_datastore_store_and_fetch_times]
-# [START gae_python3_datastore_store_and_fetch_times]
 def store_time(dt):
     entity = datastore.Entity(key=datastore_client.key('visit'))
     entity.update({
@@ -46,24 +46,43 @@ def fetch_times(limit):
     times = query.fetch(limit=limit)
 
     return times
-# [END gae_python3_datastore_store_and_fetch_times]
-# [END gae_python38_datastore_store_and_fetch_times]
 
 
-# [START gae_python38_datastore_render_times]
-# [START gae_python3_datastore_render_times]
+# [START gae_python38_auth_verify_token]
+# [START gae_python3_auth_verify_token]
 @app.route('/')
 def root():
-    # Store the current access time in Datastore.
-    store_time(datetime.datetime.now())
+    # Verify Firebase auth.
+    id_token = request.cookies.get("token")
+    error_message = None
+    claims = None
+    times = None
 
-    # Fetch the most recent 10 access times from Datastore.
-    times = fetch_times(10)
+    if id_token:
+        try:
+            # Verify the token against the Firebase Auth API. This example
+            # verifies the token on each page load. For improved performance,
+            # some applications may wish to cache results in an encrypted
+            # session store (see for instance
+            # http://flask.pocoo.org/docs/1.0/quickstart/#sessions).
+            claims = google.oauth2.id_token.verify_firebase_token(
+                id_token, firebase_request_adapter)
+        except ValueError as exc:
+            # This will be raised if the token is expired or any other
+            # verification checks fail.
+            error_message = str(exc)
+
+        # Record and fetch the recent times a logged-in user has accessed
+        # the site. This is currently shared amongst all users, but will be
+        # individualized in a following step.
+        store_time(datetime.datetime.now())
+        times = fetch_times(10)
 
     return render_template(
-        'index.html', times=times)
-# [END gae_python3_datastore_render_times]
-# [END gae_python38_datastore_render_times]
+        'index.html',
+        user_data=claims, error_message=error_message, times=times)
+# [END gae_python3_auth_verify_token]
+# [END gae_python38_auth_verify_token]
 
 
 if __name__ == '__main__':
